@@ -1,4 +1,9 @@
-"""Listings Project scraper - curated weekly listings."""
+"""Listings Project scraper - curated weekly listings.
+
+The correct URL is /real-estate/new-york-city/sublets (not /listings which
+shows only navigation). The page has rich listing data including price, dates,
+neighborhood, and description.
+"""
 
 import logging
 
@@ -10,7 +15,10 @@ from scrapers.firecrawl_client import FirecrawlClient
 
 logger = logging.getLogger(__name__)
 
-LISTINGS_PROJECT_URL = "https://www.listingsproject.com/listings"
+LISTINGS_PROJECT_URLS = [
+    "https://www.listingsproject.com/real-estate/new-york-city/sublets",
+    "https://www.listingsproject.com/real-estate/new-york-city/rentals",
+]
 
 
 class ListingsProjectScraper(BaseScraper):
@@ -29,17 +37,21 @@ class ListingsProjectScraper(BaseScraper):
         llm_parser = LLMParser(self.settings.anthropic_api_key)
         listings = []
 
-        try:
-            logger.info("Scraping Listings Project")
-            markdown = client.scrape_markdown(LISTINGS_PROJECT_URL, timeout=90.0)
-            parsed_listings = llm_parser.parse_listings_page(
-                markdown, "Listings Project NYC Apartments"
-            )
-            for parsed in parsed_listings:
-                listing = listing_from_parsed(parsed, ListingSource.LISTINGS_PROJECT)
-                listings.append(listing)
-        except Exception as e:
-            logger.error(f"Failed to scrape Listings Project: {e}")
+        for url in LISTINGS_PROJECT_URLS:
+            try:
+                logger.info(f"Scraping Listings Project: {url}")
+                markdown = client.scrape_markdown(url, timeout=90.0)
+                logger.info(f"  Got {len(markdown)} chars of markdown")
+                parsed_listings = llm_parser.parse_listings_page(
+                    markdown, "Listings Project NYC Apartments", max_chars=25000
+                )
+                for parsed in parsed_listings:
+                    listing = listing_from_parsed(
+                        parsed, ListingSource.LISTINGS_PROJECT
+                    )
+                    listings.append(listing)
+            except Exception as e:
+                logger.error(f"Failed to scrape Listings Project {url}: {e}")
 
         logger.info(f"Listings Project: {len(listings)} listings scraped")
         return listings

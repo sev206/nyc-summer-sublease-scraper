@@ -46,22 +46,23 @@ Post text:
 
 LISTINGS_PAGE_PROMPT = """You are extracting apartment rental listings from a scraped search results page from {source_name}.
 
-Analyze the page content below and extract ALL individual apartment/room listings you can find. Return a JSON array of listing objects.
+Today's date is 2026-02-15. Analyze the page content below and extract ALL individual apartment/room listings you can find. Return a JSON array of listing objects.
 
 Each listing object should have:
 {{
   "title": "<listing title or short description>",
-  "price_monthly": <integer monthly rent in USD, or null. Convert weekly (*4.33) or nightly (*30).>,
+  "price_monthly": <integer monthly rent in USD, or null. Convert weekly (*4.33) or nightly (*30) or daily (*30).>,
   "price_raw": "<original price text as shown>",
   "neighborhood": "<NYC neighborhood name or null>",
   "borough": "<Manhattan|Brooklyn|Queens|Bronx|Staten Island|null>",
   "listing_type": "<studio|1br|2br|3br+|room_in_shared|hotel_extended_stay|null>",
   "apartment_details": "<e.g. '2b1ba', 'studio', '1br', or null>",
   "is_furnished": <true|false|null>,
-  "available_from": "<YYYY-MM-DD or null>",
-  "available_to": "<YYYY-MM-DD or null>",
+  "available_from": "<YYYY-MM-DD or null - the earliest move-in date>",
+  "available_to": "<YYYY-MM-DD or null - the lease end / move-out date>",
   "source_url": "<direct URL link to this specific listing, or null>",
-  "description": "<1-2 sentence summary of the listing>"
+  "description": "<1-2 sentence summary of the listing>",
+  "contact_info": "<email, phone, or null>"
 }}
 
 Rules:
@@ -69,7 +70,8 @@ Rules:
 - Skip page navigation, ads, site headers/footers, search filters
 - Skip "in search of" / "looking for" posts
 - Each listing on the page should be a separate object in the array
-- If a price is per week, multiply by 4.33 and round to integer. If per night, multiply by 30.
+- If a price is per week, multiply by 4.33 and round to integer. If per night or per day, multiply by 30.
+- For dates: use YYYY-MM-DD format. If only month is mentioned (e.g. "July"), assume the 1st. If a date says "available now", use 2026-02-15. Assume year 2026 unless otherwise specified.
 - Return ONLY a valid JSON array. No other text before or after.
 - If no valid listings are found, return []
 
@@ -202,17 +204,46 @@ class LLMParser:
     def parse_listings_page(
         self, markdown: str, source_name: str, max_chars: int = 15000
     ) -> list[dict]:
-        """Parse a search results page markdown into a list of listing dicts."""
+        """Parse a search results page markdown into a list of listing dicts.
+
+        For large pages, splits into chunks and processes each separately
+        to avoid LLM output truncation.
+        """
         if not markdown or len(markdown.strip()) < 50:
             return []
 
-        # Truncate to control costs
-        page_content = markdown[:max_chars]
+        content = markdown[:max_chars]
 
+        # Split large pages into chunks to avoid output truncation
+        chunk_size = 12000
+        if len(content) > chunk_size:
+            chunks = []
+            for i in range(0, len(content), chunk_size):
+                chunk = content[i : i + chunk_size]
+                if len(chunk.strip()) > 100:
+                    chunks.append(chunk)
+        else:
+            chunks = [content]
+
+        all_listings = []
+        for i, chunk in enumerate(chunks):
+            chunk_label = f"{source_name} (chunk {i + 1}/{len(chunks)})" if len(chunks) > 1 else source_name
+            results = self._parse_single_chunk(chunk, source_name, chunk_label)
+            all_listings.extend(results)
+
+        logger.info(
+            f"LLM extracted {len(all_listings)} total listings from {source_name}"
+        )
+        return all_listings
+
+    def _parse_single_chunk(
+        self, page_content: str, source_name: str, chunk_label: str
+    ) -> list[dict]:
+        """Parse a single chunk of page content into listing dicts."""
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=4096,
+                max_tokens=8192,
                 temperature=0.0,
                 messages=[
                     {
@@ -231,21 +262,21 @@ class LLMParser:
 
             if isinstance(result, list):
                 logger.info(
-                    f"LLM extracted {len(result)} listings from {source_name} page"
+                    f"  LLM extracted {len(result)} listings from {chunk_label}"
                 )
                 return result
             else:
-                logger.warning(f"LLM returned non-array for {source_name}")
+                logger.warning(f"LLM returned non-array for {chunk_label}")
                 return []
 
         except json.JSONDecodeError as e:
-            logger.warning(f"LLM returned invalid JSON for {source_name}: {e}")
+            logger.warning(f"LLM returned invalid JSON for {chunk_label}: {e}")
             return []
         except anthropic.APIError as e:
-            logger.error(f"Anthropic API error for {source_name}: {e}")
+            logger.error(f"Anthropic API error for {chunk_label}: {e}")
             return []
         except Exception as e:
-            logger.error(f"Unexpected error parsing {source_name} page: {e}")
+            logger.error(f"Unexpected error parsing {chunk_label}: {e}")
             return []
 
     def _clean_json(self, text: str) -> str:

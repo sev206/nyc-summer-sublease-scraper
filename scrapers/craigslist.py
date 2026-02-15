@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from config.neighborhoods import get_borough, normalize_neighborhood
 from models.enums import Borough, ListingSource, ListingType
 from models.listing import Listing
+from parsers.date_parser import extract_date_range
 from parsers.location_parser import extract_neighborhood
 from parsers.price_parser import parse_price
 from parsers.structured_parser import (
@@ -97,6 +98,9 @@ class CraigslistScraper(BaseScraper):
         apartment_details = extract_apartment_details(title)
         is_furnished = extract_furnished(title)
 
+        # Extract dates from title
+        available_from, available_to = extract_date_range(title)
+
         return Listing(
             source=ListingSource.CRAIGSLIST,
             source_url=source_url,
@@ -108,6 +112,8 @@ class CraigslistScraper(BaseScraper):
             listing_type=listing_type,
             apartment_details=apartment_details,
             is_furnished=is_furnished,
+            available_from=available_from,
+            available_to=available_to,
             description=title[:300],
             raw_text=title,
         )

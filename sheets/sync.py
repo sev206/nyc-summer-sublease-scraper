@@ -78,5 +78,22 @@ class SheetSync:
         seen_entries = [(l.id, l.source.value) for l in new_listings]
         self.mark_seen_batch(seen_entries)
 
+        # Re-sort the entire sheet by Rating (column B) descending
+        self._sort_by_rating()
+
         logger.info(f"Added {len(rows)} new listings to sheet")
         return len(rows)
+
+    def _sort_by_rating(self) -> None:
+        """Sort all data rows by Rating (column B) descending."""
+        try:
+            row_count = len(self.worksheet.col_values(1))
+            if row_count <= 1:
+                return  # Only header, nothing to sort
+            # Sort range A2:Q{last_row} by column 2 (Rating) descending
+            self.worksheet.sort(
+                (2, "des"), range=f"A2:Q{row_count}"
+            )
+            logger.info(f"Sorted {row_count - 1} rows by rating")
+        except Exception as e:
+            logger.warning(f"Failed to sort sheet by rating: {e}")

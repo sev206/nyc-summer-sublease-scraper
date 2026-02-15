@@ -41,7 +41,7 @@ class SpareRoomScraper(BaseScraper):
             logger.info("Scraping SpareRoom NYC listings")
             markdown = client.scrape_markdown(SPAREROOM_URL, timeout=90.0)
             parsed_listings = llm_parser.parse_listings_page(
-                markdown, "SpareRoom NYC Rooms & Sublets"
+                markdown, "SpareRoom NYC Rooms & Sublets", max_chars=25000
             )
             for parsed in parsed_listings:
                 listing = listing_from_parsed(

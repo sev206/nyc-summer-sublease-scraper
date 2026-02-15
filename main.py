@@ -56,12 +56,6 @@ def register_scrapers() -> None:
         pass
 
     try:
-        from scrapers.roomi import RoomiScraper
-        SCRAPER_REGISTRY["roomi"] = RoomiScraper
-    except ImportError:
-        pass
-
-    try:
         from scrapers.facebook_groups import FacebookGroupsScraper
         SCRAPER_REGISTRY["facebook"] = FacebookGroupsScraper
     except ImportError:
