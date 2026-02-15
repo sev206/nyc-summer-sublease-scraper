@@ -1,0 +1,39 @@
+name: Scrape Websites
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour
+  workflow_dispatch: {}    # Manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write Google credentials file
+        run: echo '${{ secrets.GOOGLE_SHEETS_CREDS }}' > config/service_account.json
+
+      - name: Run website scrapers
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_SHEETS_CREDENTIALS_FILE: config/service_account.json
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: |
+          python main.py --sources craigslist,leasebreak,spareroom,furnished_finder,listings_project,roomi
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f config/service_account.json
