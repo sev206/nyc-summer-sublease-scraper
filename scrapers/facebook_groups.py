@@ -1,4 +1,4 @@
-"""Facebook Groups scraper — via Apify + Claude Haiku LLM parsing."""
+"""Facebook Groups scraper - via Apify + Claude Haiku LLM parsing."""
 
 import logging
 from datetime import datetime
@@ -6,33 +6,14 @@ from typing import Optional
 
 from apify_client import ApifyClient
 
-from config.neighborhoods import get_borough, normalize_neighborhood
-from models.enums import Borough, ListingSource, ListingType
+from models.enums import ListingSource
 from models.listing import Listing
-from parsers.llm_parser import LLMParser
+from parsers.llm_parser import LLMParser, listing_from_parsed
 from scrapers.base import BaseScraper
 
 logger = logging.getLogger(__name__)
 
 ACTOR_ID = "apify/facebook-groups-scraper"
-
-# Map LLM output listing_type strings to our enums
-TYPE_MAP = {
-    "studio": ListingType.STUDIO,
-    "1br": ListingType.ONE_BEDROOM,
-    "2br": ListingType.TWO_BEDROOM,
-    "3br+": ListingType.THREE_PLUS_BEDROOM,
-    "room_in_shared": ListingType.ROOM_IN_SHARED,
-    "hotel_extended_stay": ListingType.HOTEL_EXTENDED_STAY,
-}
-
-BOROUGH_MAP = {
-    "manhattan": Borough.MANHATTAN,
-    "brooklyn": Borough.BROOKLYN,
-    "queens": Borough.QUEENS,
-    "bronx": Borough.BRONX,
-    "staten island": Borough.STATEN_ISLAND,
-}
 
 
 class FacebookGroupsScraper(BaseScraper):
@@ -92,7 +73,6 @@ class FacebookGroupsScraper(BaseScraper):
 
     def _parse_post(self, post: dict, llm_parser: LLMParser) -> Optional[Listing]:
         """Parse a single Facebook post into a Listing using the LLM."""
-        # Extract the post text
         text = post.get("text", "") or post.get("message", "")
         if not text or len(text.strip()) < 20:
             return None
@@ -128,56 +108,13 @@ class FacebookGroupsScraper(BaseScraper):
         if parsed.get("is_iso"):
             return None
 
-        # Map parsed fields to Listing
-        neighborhood = ""
-        borough = Borough.UNKNOWN
-        if parsed.get("neighborhood"):
-            neighborhood = normalize_neighborhood(parsed["neighborhood"])
-            borough = get_borough(neighborhood)
-        if borough == Borough.UNKNOWN and parsed.get("borough"):
-            borough = BOROUGH_MAP.get(parsed["borough"].lower(), Borough.UNKNOWN)
+        # Use shared helper to create listing
+        listing = listing_from_parsed(parsed, ListingSource.FACEBOOK)
 
-        listing_type = ListingType.UNKNOWN
-        if parsed.get("listing_type"):
-            listing_type = TYPE_MAP.get(
-                parsed["listing_type"].lower(), ListingType.UNKNOWN
-            )
+        # Override with post-level metadata
+        listing.source_url = post_url
+        listing.raw_text = text[:1000]
+        listing.posted_date = posted_date
+        listing.images = images
 
-        # Parse dates
-        available_from = None
-        available_to = None
-        if parsed.get("available_from"):
-            try:
-                from datetime import date as date_type
-                parts = parsed["available_from"].split("-")
-                available_from = date_type(int(parts[0]), int(parts[1]), int(parts[2]))
-            except (ValueError, IndexError):
-                pass
-        if parsed.get("available_to"):
-            try:
-                from datetime import date as date_type
-                parts = parsed["available_to"].split("-")
-                available_to = date_type(int(parts[0]), int(parts[1]), int(parts[2]))
-            except (ValueError, IndexError):
-                pass
-
-        return Listing(
-            source=ListingSource.FACEBOOK,
-            source_url=post_url,
-            raw_text=text[:1000],
-            title="",
-            price_monthly=parsed.get("price_monthly"),
-            price_raw=parsed.get("price_raw", ""),
-            neighborhood=neighborhood,
-            borough=borough,
-            address=parsed.get("address", "") or "",
-            listing_type=listing_type,
-            apartment_details=parsed.get("apartment_details", "") or "",
-            is_furnished=parsed.get("is_furnished"),
-            available_from=available_from,
-            available_to=available_to,
-            posted_date=posted_date,
-            description=parsed.get("description_summary", "") or "",
-            contact_info=parsed.get("contact_info", "") or "",
-            images=images,
-        )
+        return listing
