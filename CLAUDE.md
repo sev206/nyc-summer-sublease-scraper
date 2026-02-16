@@ -13,12 +13,12 @@ Automated scraper that finds NYC apartment sublets for a summer stay (July 1 –
 - **Python 3.12**
 - **apify-client** — Facebook Groups scraping
 - **anthropic** SDK — Claude Haiku for parsing unstructured FB posts
-- **Firecrawl REST API** via httpx — website scraping (LeaseBreak, SpareRoom, etc.)
-- **feedparser** — Craigslist RSS feed
+- **Firecrawl REST API** via httpx — website scraping (LeaseBreak, Furnished Finder, etc.)
+- **httpx + beautifulsoup4** — Craigslist HTML scraping
 - **gspread + google-auth** — Google Sheets API (service account)
 - **pydantic / pydantic-settings** — data models and config
 - **thefuzz** — fuzzy string matching for cross-source dedup
-- **GitHub Actions** — scheduled runs (websites hourly, FB every 2 hours)
+- **GitHub Actions** — scheduled runs (websites 5x/day, FB 3x/day)
 
 ## Directory Structure
 
@@ -30,6 +30,7 @@ models/          Pydantic Listing model + enums
 scoring/         Rating algorithm (price/location/type/timing/bonus)
 dedup/           Fingerprint generation + Google Sheet-backed seen-store
 sheets/          gspread client wrapper, append/sync logic
+scripts/         Utility scripts (cleanup_sheet.py)
 main.py          Pipeline orchestrator
 tests/           pytest tests
 .github/workflows/  Cron-scheduled GitHub Actions
@@ -50,9 +51,14 @@ python main.py
 # Run a single source
 python main.py --source craigslist
 
+# Run multiple sources
+python main.py --sources craigslist,leasebreak,furnished_finder
+
 # Dry run (scrape + score, don't write to sheet)
 python main.py --dry-run
 ```
+
+Available source names: `craigslist`, `leasebreak`, `furnished_finder`, `spareroom`, `listings_project`, `roomi`, `facebook`
 
 ## Environment Setup
 
@@ -65,15 +71,15 @@ Required in `.env`:
 
 ## Data Sources
 
-| Source | Method | Frequency |
-|--------|--------|-----------|
-| Facebook Groups (5) | Apify actor | Every 2 hours |
-| Craigslist NYC | RSS feed | Hourly |
-| LeaseBreak | Firecrawl | Hourly |
-| SpareRoom | Firecrawl | Hourly |
-| Listings Project | Firecrawl | Hourly |
-| Furnished Finder | Firecrawl | Hourly |
-| Roomi | Firecrawl | Hourly |
+| Source | Method | Scheduled | Notes |
+|--------|--------|-----------|-------|
+| Facebook Groups (5) | Apify actor + Claude Haiku | 3x/day (8am, 1pm, 6pm EST) | 10 posts/group, last 5 hours only |
+| Craigslist NYC | httpx + BeautifulSoup | 5x/day | Fetches individual listing pages |
+| LeaseBreak | Firecrawl | 5x/day | Per-borough, paginated |
+| Furnished Finder | Firecrawl | 5x/day | Per-borough, paginated |
+| SpareRoom | Firecrawl | Not scheduled | Scraper exists but dropped from workflows |
+| Listings Project | Firecrawl | Not scheduled | Scraper exists but dropped from workflows |
+| Roomi | Firecrawl | Not scheduled | Scraper exists but not in any workflow |
 
 ## Rating Algorithm (1.0 – 10.0)
 
@@ -86,11 +92,20 @@ Weighted composite score:
 
 ## Key Design Decisions
 
-- **Sheet-backed dedup** (not SQLite): GitHub Actions is stateless, so fingerprints persist in a hidden `_seen` worksheet in the same Google Sheet. No external DB needed.
+- **Sheet-backed dedup** (not SQLite): GitHub Actions is stateless, so fingerprints persist in a `_seen` worksheet in the same Google Sheet. No external DB needed.
+- **Hit-limit monitoring**: When a Facebook group returns exactly the `resultsLimit` count, a warning is logged to the `_log` worksheet (auto-created on first run).
 - **Claude Haiku for FB posts**: Facebook posts are unstructured text. The LLM extracts price, neighborhood, dates, and listing type into structured JSON.
 - **Firecrawl REST API** (not MCP): The scraper runs autonomously via GitHub Actions, not inside an LLM agent context. Direct API calls via httpx are used instead of MCP tools.
 - **Fail-open per source**: If one scraper fails (site down, rate limited, etc.), others still run. Errors are logged but don't crash the pipeline.
 - **Status column never overwritten**: The Google Sheet Status column (A) is user-managed. New listings are always appended; existing rows are never modified.
+
+## Google Sheet Worksheets
+
+| Tab | Purpose |
+|-----|---------|
+| Sheet1 | Main listings (17 columns: Status through Listing ID) |
+| `_seen` | Dedup fingerprints (auto-created) |
+| `_log` | Hit-limit warnings for FB groups (auto-created) |
 
 ## Running Tests
 
