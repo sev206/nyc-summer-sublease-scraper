@@ -63,13 +63,16 @@ def register_scrapers() -> None:
 
 
 def run_scraper_safe(
-    scraper_class: type, settings: Settings, known_urls: set[str] | None = None
+    scraper_class: type,
+    settings: Settings,
+    known_urls: set[str] | None = None,
+    sheet_sync: "SheetSync | None" = None,
 ) -> list[Listing]:
     """Run a scraper with error isolation."""
     name = scraper_class.__name__
     try:
         logger.info(f"Starting {name}")
-        scraper = scraper_class(settings, known_urls=known_urls)
+        scraper = scraper_class(settings, known_urls=known_urls, sheet_sync=sheet_sync)
         results = scraper.scrape()
         logger.info(f"{name} returned {len(results)} listings")
         return results
@@ -154,7 +157,7 @@ def main(source: str | None = None, dry_run: bool = False) -> None:
     # Phase 1: Scrape (pass known URLs so scrapers skip already-seen listings)
     all_listings: list[Listing] = []
     for name, scraper_class in scrapers_to_run.items():
-        listings = run_scraper_safe(scraper_class, settings, known_urls)
+        listings = run_scraper_safe(scraper_class, settings, known_urls, sheet_sync)
         all_listings.extend(listings)
 
     logger.info(f"Total raw listings: {len(all_listings)}")

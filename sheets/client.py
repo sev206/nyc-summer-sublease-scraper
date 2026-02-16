@@ -57,6 +57,17 @@ def ensure_headers(worksheet: gspread.Worksheet) -> None:
         logger.info("Wrote header row to worksheet")
 
 
+def ensure_log_worksheet(spreadsheet: gspread.Spreadsheet) -> gspread.Worksheet:
+    """Get or create the _log worksheet for scraper monitoring."""
+    try:
+        return spreadsheet.worksheet("_log")
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet("_log", rows=5000, cols=5)
+        ws.update("A1:E1", [["Timestamp", "Source", "Group URL", "Posts Returned", "Limit"]])
+        logger.info("Created _log worksheet for scraper monitoring")
+        return ws
+
+
 def ensure_seen_worksheet(spreadsheet: gspread.Spreadsheet) -> gspread.Worksheet:
     """Get or create the _seen worksheet for dedup persistence."""
     try:

@@ -6,7 +6,7 @@ from datetime import datetime
 import gspread
 
 from models.listing import Listing
-from sheets.client import ensure_headers, ensure_seen_worksheet
+from sheets.client import ensure_headers, ensure_log_worksheet, ensure_seen_worksheet
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,9 @@ class SheetSync:
 
         # Dedup persistence worksheet
         self.seen_ws = ensure_seen_worksheet(spreadsheet)
+
+        # Monitoring log worksheet
+        self.log_ws = ensure_log_worksheet(spreadsheet)
 
     def get_existing_ids(self) -> set[str]:
         """Read the Listing ID column to get all existing fingerprints."""
@@ -61,6 +64,17 @@ class SheetSync:
         now = datetime.utcnow().isoformat()
         rows = [[fp, source, now] for fp, source in entries]
         self.seen_ws.append_rows(rows, value_input_option="USER_ENTERED")
+
+    def log_hit_limit(self, source: str, group_url: str, count: int, limit: int) -> None:
+        """Log a hit-limit event to the _log worksheet."""
+        try:
+            now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+            self.log_ws.append_row(
+                [now, source, group_url, count, limit],
+                value_input_option="USER_ENTERED",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to write hit-limit log: {e}")
 
     def append_listings(self, listings: list[Listing]) -> int:
         """Append new listings to the sheet. Returns count of rows added.

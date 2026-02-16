@@ -70,12 +70,15 @@ class FacebookGroupsScraper(BaseScraper):
         items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
 
         count = len(items)
+        limit = run_input["resultsLimit"]
         logger.info(f"  Got {count} posts from {group_url}")
-        if count >= run_input["resultsLimit"]:
+        if count >= limit:
             logger.warning(
-                f"  HIT LIMIT: {group_url} returned {count}/{run_input['resultsLimit']} "
+                f"  HIT LIMIT: {group_url} returned {count}/{limit} "
                 f"posts — likely missed some. Consider increasing resultsLimit or frequency."
             )
+            if self.sheet_sync:
+                self.sheet_sync.log_hit_limit("Facebook Groups", group_url, count, limit)
         return items
 
     def _parse_post(self, post: dict, llm_parser: LLMParser) -> Optional[Listing]:
