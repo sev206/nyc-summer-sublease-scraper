@@ -60,7 +60,8 @@ class FacebookGroupsScraper(BaseScraper):
 
         run_input = {
             "startUrls": [{"url": group_url}],
-            "maxPosts": 25,
+            "resultsLimit": 10,
+            "onlyPostsNewerThan": "5 hours",
             "maxComments": 0,
             "includeNestedComments": False,
         }
@@ -68,7 +69,13 @@ class FacebookGroupsScraper(BaseScraper):
         run = client.actor(ACTOR_ID).call(run_input=run_input)
         items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
 
-        logger.info(f"  Got {len(items)} posts from {group_url}")
+        count = len(items)
+        logger.info(f"  Got {count} posts from {group_url}")
+        if count >= run_input["resultsLimit"]:
+            logger.warning(
+                f"  HIT LIMIT: {group_url} returned {count}/{run_input['resultsLimit']} "
+                f"posts — likely missed some. Consider increasing resultsLimit or frequency."
+            )
         return items
 
     def _parse_post(self, post: dict, llm_parser: LLMParser) -> Optional[Listing]:

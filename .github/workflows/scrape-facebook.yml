@@ -2,7 +2,7 @@ name: Scrape Facebook Groups
 
 on:
   schedule:
-    - cron: '0 1,13,15,17,19,21,23 * * *'  # Every 2h, 8am-8pm EST
+    - cron: '0 13,18,23 * * *'  # 3x/day: 8am, 1pm, 6pm EST
   workflow_dispatch: {}      # Manual trigger
 
 jobs:
