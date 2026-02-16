@@ -32,7 +32,7 @@ jobs:
           GOOGLE_SHEETS_CREDENTIALS_FILE: config/service_account.json
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
-          python main.py --sources craigslist,leasebreak,spareroom,furnished_finder,listings_project
+          python main.py --sources craigslist,leasebreak,furnished_finder
 
       - name: Clean up credentials
         if: always()
