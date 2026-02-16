@@ -25,6 +25,10 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Tool data
+.firecrawl/
+.playwright-mcp/
+
 # Distribution
 *.egg-info/
 dist/

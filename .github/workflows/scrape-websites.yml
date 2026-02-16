@@ -2,7 +2,7 @@ name: Scrape Websites
 
 on:
   schedule:
-    - cron: '0 0,12,15,18,21 * * *'  # 5x/day, ~7am-9pm Eastern
+    - cron: '0 12,17,22 * * *'  # 3x/day: 7am, 12pm, 5pm Eastern
   workflow_dispatch: {}    # Manual trigger
 
 jobs:

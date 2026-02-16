@@ -23,7 +23,10 @@ from scrapers.base import BaseScraper
 
 logger = logging.getLogger(__name__)
 
-CRAIGSLIST_URL = "https://newyork.craigslist.org/search/sub?max_price=2200"
+CRAIGSLIST_URLS = [
+    "https://newyork.craigslist.org/search/sub?max_price=2200",  # Sublets
+    "https://newyork.craigslist.org/search/roo?max_price=2200",  # Rooms & Shares
+]
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -37,29 +40,31 @@ class CraigslistScraper(BaseScraper):
     def scrape(self) -> list[Listing]:
         listings = []
 
-        try:
-            logger.info(f"Scraping Craigslist: {CRAIGSLIST_URL}")
-            response = httpx.get(
-                CRAIGSLIST_URL,
-                headers={"User-Agent": USER_AGENT},
-                timeout=30.0,
-                follow_redirects=True,
-            )
-            response.raise_for_status()
+        for url in CRAIGSLIST_URLS:
+            try:
+                logger.info(f"Scraping Craigslist: {url}")
+                response = httpx.get(
+                    url,
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=30.0,
+                    follow_redirects=True,
+                )
+                response.raise_for_status()
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            items = soup.select("li.cl-static-search-result")
-            logger.info(f"Found {len(items)} Craigslist listings")
+                soup = BeautifulSoup(response.text, "html.parser")
+                items = soup.select("li.cl-static-search-result")
+                logger.info(f"Found {len(items)} Craigslist listings")
 
-            for item in items[: self.settings.max_listings_per_source]:
-                listing = self._parse_item(item)
-                if listing:
-                    listings.append(listing)
+                remaining = self.settings.max_listings_per_source - len(listings)
+                for item in items[:remaining]:
+                    listing = self._parse_item(item)
+                    if listing:
+                        listings.append(listing)
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Craigslist HTTP error: {e.response.status_code}")
-        except Exception as e:
-            logger.error(f"Failed to scrape Craigslist: {e}")
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Craigslist HTTP error: {e.response.status_code}")
+            except Exception as e:
+                logger.error(f"Failed to scrape Craigslist: {e}")
 
         logger.info(f"Craigslist: {len(listings)} listings parsed")
         return listings
