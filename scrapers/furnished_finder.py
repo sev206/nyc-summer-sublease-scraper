@@ -13,7 +13,7 @@ from models.enums import ListingSource
 from models.listing import Listing
 from parsers.llm_parser import LLMParser, listing_from_parsed
 from scrapers.base import BaseScraper
-from scrapers.firecrawl_client import FirecrawlClient
+from scrapers.firecrawl_client import FirecrawlClient, FirecrawlCreditError
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ FURNISHED_FINDER_URLS = [
 ]
 
 # Number of search pages to scrape per borough (lazy loading yields ~6-36 per page)
-MAX_SEARCH_PAGES = 5
+MAX_SEARCH_PAGES = 3
 
 # Max individual listing pages to batch-scrape per borough
 MAX_LISTINGS_PER_BOROUGH = 50
@@ -67,6 +67,9 @@ class FurnishedFinderScraper(BaseScraper):
                     client, llm_parser, search_url
                 )
                 listings.extend(borough_listings)
+            except FirecrawlCreditError:
+                logger.error("Firecrawl credits exhausted, stopping Furnished Finder")
+                break
             except Exception as e:
                 logger.error(f"Failed to scrape Furnished Finder {search_url}: {e}")
 
@@ -99,6 +102,17 @@ class FurnishedFinderScraper(BaseScraper):
                 # Stop paginating if this page added nothing new
                 if added == 0:
                     break
+                # Stop paginating if all found IDs are already known
+                if self.known_urls and new_ids:
+                    new_urls = {
+                        f"https://www.furnishedfinder.com/property/{pid}_1"
+                        for pid in new_ids
+                    }
+                    if new_urls.issubset(self.known_urls):
+                        logger.info("  All IDs on this page already known, stopping pagination")
+                        break
+            except FirecrawlCreditError:
+                raise  # Propagate to caller
             except Exception as e:
                 logger.warning(f"  Failed to scrape search page {page_num}: {e}")
 
@@ -114,7 +128,20 @@ class FurnishedFinderScraper(BaseScraper):
             f"https://www.furnishedfinder.com/property/{pid}_1"
             for pid in top_ids
         ]
-        logger.info(f"  Batch scraping {len(urls_to_scrape)} newest listings")
+
+        # Filter out URLs we've already scraped in previous runs
+        if self.known_urls:
+            before = len(urls_to_scrape)
+            urls_to_scrape = [u for u in urls_to_scrape if u not in self.known_urls]
+            skipped = before - len(urls_to_scrape)
+            if skipped:
+                logger.info(f"  Skipped {skipped} already-known URLs")
+
+        if not urls_to_scrape:
+            logger.info("  All listings already known, nothing to scrape")
+            return []
+
+        logger.info(f"  Batch scraping {len(urls_to_scrape)} new listings")
 
         # Step 3: Batch scrape individual listing pages
         url_to_markdown = client.batch_scrape_markdown(

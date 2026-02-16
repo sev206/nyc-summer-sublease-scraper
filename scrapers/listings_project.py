@@ -11,7 +11,7 @@ from models.enums import ListingSource
 from models.listing import Listing
 from parsers.llm_parser import LLMParser, listing_from_parsed
 from scrapers.base import BaseScraper
-from scrapers.firecrawl_client import FirecrawlClient
+from scrapers.firecrawl_client import FirecrawlClient, FirecrawlCreditError
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,9 @@ class ListingsProjectScraper(BaseScraper):
                         parsed, ListingSource.LISTINGS_PROJECT
                     )
                     listings.append(listing)
+            except FirecrawlCreditError:
+                logger.error("Firecrawl credits exhausted, stopping Listings Project")
+                break
             except Exception as e:
                 logger.error(f"Failed to scrape Listings Project {url}: {e}")
 

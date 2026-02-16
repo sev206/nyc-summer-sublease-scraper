@@ -12,7 +12,7 @@ from models.enums import ListingSource
 from models.listing import Listing
 from parsers.llm_parser import LLMParser, listing_from_parsed
 from scrapers.base import BaseScraper
-from scrapers.firecrawl_client import FirecrawlClient
+from scrapers.firecrawl_client import FirecrawlClient, FirecrawlCreditError
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,9 @@ class LeaseBreakScraper(BaseScraper):
                     client, llm_parser, search_url
                 )
                 listings.extend(borough_listings)
+            except FirecrawlCreditError:
+                logger.error("Firecrawl credits exhausted, stopping LeaseBreak")
+                break
             except Exception as e:
                 logger.error(f"Failed to scrape LeaseBreak {search_url}: {e}")
 
@@ -91,7 +94,20 @@ class LeaseBreakScraper(BaseScraper):
             f"https://www.leasebreak.com/short-term-rental-details/{lid}/{slug}"
             for lid, slug in top_matches
         ]
-        logger.info(f"  Batch scraping {len(urls_to_scrape)} newest listings")
+
+        # Filter out URLs we've already scraped in previous runs
+        if self.known_urls:
+            before = len(urls_to_scrape)
+            urls_to_scrape = [u for u in urls_to_scrape if u not in self.known_urls]
+            skipped = before - len(urls_to_scrape)
+            if skipped:
+                logger.info(f"  Skipped {skipped} already-known URLs")
+
+        if not urls_to_scrape:
+            logger.info("  All listings already known, nothing to scrape")
+            return []
+
+        logger.info(f"  Batch scraping {len(urls_to_scrape)} new listings")
 
         # Step 3: Batch scrape individual pages
         url_to_markdown = client.batch_scrape_markdown(

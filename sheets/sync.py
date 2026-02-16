@@ -30,6 +30,14 @@ class SheetSync:
         except Exception:
             return set()
 
+    def get_existing_source_urls(self) -> set[str]:
+        """Read the Link column (L) to get all previously scraped URLs."""
+        try:
+            col_values = self.worksheet.col_values(12)  # Column L = Link
+            return {v for v in col_values[1:] if v}  # Skip header, skip blanks
+        except Exception:
+            return set()
+
     def get_seen_fingerprints(self) -> set[str]:
         """Read all fingerprints from the _seen worksheet."""
         try:

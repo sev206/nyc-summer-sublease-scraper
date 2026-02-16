@@ -62,12 +62,14 @@ def register_scrapers() -> None:
         pass
 
 
-def run_scraper_safe(scraper_class: type, settings: Settings) -> list[Listing]:
+def run_scraper_safe(
+    scraper_class: type, settings: Settings, known_urls: set[str] | None = None
+) -> list[Listing]:
     """Run a scraper with error isolation."""
     name = scraper_class.__name__
     try:
         logger.info(f"Starting {name}")
-        scraper = scraper_class(settings)
+        scraper = scraper_class(settings, known_urls=known_urls)
         results = scraper.scrape()
         logger.info(f"{name} returned {len(results)} listings")
         return results
@@ -139,10 +141,20 @@ def main(source: str | None = None, dry_run: bool = False) -> None:
     else:
         scrapers_to_run = SCRAPER_REGISTRY
 
-    # Phase 1: Scrape
+    # Connect to sheet early — needed for URL pre-filtering and later dedup
+    sheet_sync = None
+    known_urls: set[str] = set()
+    if not dry_run and settings.spreadsheet_id:
+        gc = get_gspread_client(settings.google_sheets_credentials_file)
+        spreadsheet = open_spreadsheet(gc, settings.spreadsheet_id)
+        sheet_sync = SheetSync(spreadsheet)
+        known_urls = sheet_sync.get_existing_source_urls()
+        logger.info(f"Loaded {len(known_urls)} known URLs for pre-filtering")
+
+    # Phase 1: Scrape (pass known URLs so scrapers skip already-seen listings)
     all_listings: list[Listing] = []
     for name, scraper_class in scrapers_to_run.items():
-        listings = run_scraper_safe(scraper_class, settings)
+        listings = run_scraper_safe(scraper_class, settings, known_urls)
         all_listings.extend(listings)
 
     logger.info(f"Total raw listings: {len(all_listings)}")
@@ -160,14 +172,10 @@ def main(source: str | None = None, dry_run: bool = False) -> None:
         listing.id = listing.generate_fingerprint()
 
     # Phase 5: Deduplicate
-    if not dry_run and settings.spreadsheet_id:
-        gc = get_gspread_client(settings.google_sheets_credentials_file)
-        spreadsheet = open_spreadsheet(gc, settings.spreadsheet_id)
-        sheet_sync = SheetSync(spreadsheet)
+    if sheet_sync:
         deduplicator = Deduplicator(sheet_sync)
     else:
         deduplicator = Deduplicator(sheet_sync=None)
-        sheet_sync = None
 
     new_listings = deduplicator.deduplicate(all_listings)
     logger.info(f"After dedup: {len(new_listings)} new listings")

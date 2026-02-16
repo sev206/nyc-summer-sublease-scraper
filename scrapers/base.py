@@ -9,8 +9,9 @@ from models.listing import Listing
 class BaseScraper(ABC):
     """Base class that all source scrapers inherit from."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, known_urls: set[str] | None = None):
         self.settings = settings
+        self.known_urls = known_urls or set()
 
     @abstractmethod
     def scrape(self) -> list[Listing]:

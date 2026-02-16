@@ -6,7 +6,7 @@ from models.enums import ListingSource, ListingType
 from models.listing import Listing
 from parsers.llm_parser import LLMParser, listing_from_parsed
 from scrapers.base import BaseScraper
-from scrapers.firecrawl_client import FirecrawlClient
+from scrapers.firecrawl_client import FirecrawlClient, FirecrawlCreditError
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,8 @@ class SpareRoomScraper(BaseScraper):
                     default_type=ListingType.ROOM_IN_SHARED,
                 )
                 listings.append(listing)
+        except FirecrawlCreditError:
+            logger.error("Firecrawl credits exhausted, skipping SpareRoom")
         except Exception as e:
             logger.error(f"Failed to scrape SpareRoom: {e}")
 

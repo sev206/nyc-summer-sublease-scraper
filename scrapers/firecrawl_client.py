@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 FIRECRAWL_BASE_URL = "https://api.firecrawl.dev/v1"
 
 
+class FirecrawlCreditError(Exception):
+    """Raised when Firecrawl API returns 402 (credits exhausted)."""
+    pass
+
+
 class FirecrawlClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -52,6 +57,9 @@ class FirecrawlClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 402:
+                logger.error("Firecrawl credits exhausted (402)")
+                raise FirecrawlCreditError("Firecrawl credits exhausted") from e
             logger.error(f"Firecrawl HTTP error for {url}: {e.response.status_code}")
             raise
         except httpx.RequestError as e:
@@ -127,8 +135,13 @@ class FirecrawlClient:
             return []
 
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 402:
+                logger.error("Firecrawl credits exhausted (402)")
+                raise FirecrawlCreditError("Firecrawl credits exhausted") from e
             logger.error(f"Firecrawl batch HTTP error: {e.response.status_code}")
             return []
+        except FirecrawlCreditError:
+            raise
         except Exception as e:
             logger.error(f"Firecrawl batch error: {e}")
             return []
