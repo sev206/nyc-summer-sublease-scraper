@@ -16,8 +16,9 @@ WEIGHTS = {
 # Tier 1: Midtown East / near Grand Central
 # Tier 2: LES / East Village
 # Tier 3: Other Midtown / Downtown
-# Tier 4: UES / UWS
-# Tier 5: Brooklyn / Queens commuter areas
+# Tier 4: UES
+# Tier 5: UWS / Brooklyn / Queens commuter areas
+# Tier 6: Harlem and above (upper Manhattan)
 LOCATION_TIERS: dict[int, list[str]] = {
     1: [
         "Midtown East", "Murray Hill", "Turtle Bay", "Kips Bay",
@@ -35,14 +36,18 @@ LOCATION_TIERS: dict[int, list[str]] = {
     ],
     4: [
         "Upper East Side", "Yorkville", "Lenox Hill", "Carnegie Hill",
-        "Upper West Side",
     ],
     5: [
+        "Upper West Side",
         "Williamsburg", "DUMBO", "Brooklyn Heights", "Downtown Brooklyn",
         "Fort Greene", "Clinton Hill", "Park Slope", "Cobble Hill",
         "Boerum Hill", "Carroll Gardens", "Prospect Heights",
         "Greenpoint", "Bushwick", "Bed-Stuy",
         "Long Island City", "Astoria", "Sunnyside",
+    ],
+    6: [
+        "Harlem", "East Harlem", "Washington Heights", "Inwood",
+        "Morningside Heights",
     ],
 }
 
@@ -52,6 +57,7 @@ LOCATION_TIER_SCORES: dict[int, float] = {
     3: 6.5,
     4: 5.0,
     5: 3.5,
+    6: 2.0,
 }
 
 # Borough-level fallback scores (when neighborhood isn't recognized)

@@ -28,6 +28,7 @@ class FirecrawlClient:
         url: str,
         formats: Optional[list[str]] = None,
         timeout: float = 60.0,
+        wait_for: Optional[int] = None,
     ) -> dict:
         """Scrape a single URL and return the response.
 
@@ -35,6 +36,7 @@ class FirecrawlClient:
             url: The URL to scrape.
             formats: Output formats, e.g. ["markdown"], ["html"], ["markdown", "html"].
             timeout: Request timeout in seconds.
+            wait_for: Milliseconds to wait for JS rendering before scraping.
 
         Returns:
             The Firecrawl API response dict with 'data' containing the scraped content.
@@ -42,10 +44,12 @@ class FirecrawlClient:
         if formats is None:
             formats = ["markdown"]
 
-        payload = {
+        payload: dict = {
             "url": url,
             "formats": formats,
         }
+        if wait_for is not None:
+            payload["waitFor"] = wait_for
 
         try:
             response = httpx.post(
@@ -66,9 +70,13 @@ class FirecrawlClient:
             logger.error(f"Firecrawl request error for {url}: {e}")
             raise
 
-    def scrape_markdown(self, url: str, timeout: float = 60.0) -> str:
+    def scrape_markdown(
+        self, url: str, timeout: float = 60.0, wait_for: Optional[int] = None
+    ) -> str:
         """Scrape a URL and return just the markdown content."""
-        result = self.scrape(url, formats=["markdown"], timeout=timeout)
+        result = self.scrape(
+            url, formats=["markdown"], timeout=timeout, wait_for=wait_for
+        )
         data = result.get("data", {})
         return data.get("markdown", "")
 
