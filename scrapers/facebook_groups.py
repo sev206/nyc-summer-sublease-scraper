@@ -60,7 +60,7 @@ class FacebookGroupsScraper(BaseScraper):
 
         run_input = {
             "startUrls": [{"url": group_url}],
-            "maxPosts": 50,
+            "maxPosts": 25,
             "maxComments": 0,
             "includeNestedComments": False,
         }
