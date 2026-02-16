@@ -23,10 +23,11 @@ LEASEBREAK_URLS = [
 ]
 
 # Max individual listing pages to scrape per borough per run
-MAX_LISTINGS_PER_BOROUGH = 15
+MAX_LISTINGS_PER_BOROUGH = 50
 
+# Captures (listing_id, slug) from listing URLs
 LISTING_URL_PATTERN = re.compile(
-    r"https://www\.leasebreak\.com/short-term-rental-details/\d+/[\w-]+"
+    r"https://www\.leasebreak\.com/short-term-rental-details/(\d+)/([\w-]+)"
 )
 
 
@@ -68,19 +69,33 @@ class LeaseBreakScraper(BaseScraper):
         # Step 1: Get search page and extract listing URLs
         logger.info(f"Scraping LeaseBreak search: {search_url}")
         search_markdown = client.scrape_markdown(search_url, timeout=90.0)
-        listing_urls = list(set(LISTING_URL_PATTERN.findall(search_markdown)))
-        logger.info(f"  Found {len(listing_urls)} listing URLs")
 
-        if not listing_urls:
+        # Extract (listing_id, slug) pairs, deduplicate by ID
+        matches = LISTING_URL_PATTERN.findall(search_markdown)
+        seen_ids: set[str] = set()
+        unique_matches: list[tuple[str, str]] = []
+        for listing_id, slug in matches:
+            if listing_id not in seen_ids:
+                seen_ids.add(listing_id)
+                unique_matches.append((listing_id, slug))
+
+        logger.info(f"  Found {len(unique_matches)} unique listing URLs")
+
+        if not unique_matches:
             return []
 
-        # Step 2: Take a limited sample
-        urls_to_scrape = listing_urls[:MAX_LISTINGS_PER_BOROUGH]
-        logger.info(f"  Batch scraping {len(urls_to_scrape)} individual listings")
+        # Step 2: Sort by listing ID descending (newest first), take top N
+        unique_matches.sort(key=lambda m: int(m[0]), reverse=True)
+        top_matches = unique_matches[:MAX_LISTINGS_PER_BOROUGH]
+        urls_to_scrape = [
+            f"https://www.leasebreak.com/short-term-rental-details/{lid}/{slug}"
+            for lid, slug in top_matches
+        ]
+        logger.info(f"  Batch scraping {len(urls_to_scrape)} newest listings")
 
         # Step 3: Batch scrape individual pages
         url_to_markdown = client.batch_scrape_markdown(
-            urls_to_scrape, timeout=300.0
+            urls_to_scrape, timeout=600.0
         )
         logger.info(f"  Got {len(url_to_markdown)} page results")
 
