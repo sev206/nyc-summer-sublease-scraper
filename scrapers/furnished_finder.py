@@ -1,19 +1,21 @@
 """Furnished Finder scraper - furnished short-term rentals.
 
 Furnished Finder's search page uses lazy loading so only ~6 listings render
-per page. We scrape multiple paginated search pages to collect property URLs,
-then batch-scrape individual listing pages via Firecrawl and parse each with
-the LLM.
+per page. We scrape multiple paginated search pages to collect property URLs
+using BeautifulSoup, then fetch individual listing pages via Playwright and
+parse each with the LLM.
 """
 
 import logging
 import re
 
+from bs4 import BeautifulSoup
+
 from models.enums import ListingSource
 from models.listing import Listing
 from parsers.llm_parser import LLMParser, listing_from_parsed
 from scrapers.base import BaseScraper
-from scrapers.firecrawl_client import FirecrawlClient, FirecrawlCreditError
+from scrapers.browser_client import BrowserClient
 
 logger = logging.getLogger(__name__)
 
@@ -40,58 +42,64 @@ MAX_SEARCH_PAGES = 3
 MAX_LISTINGS_PER_BOROUGH = 50
 
 # Matches property IDs from URLs like /property/963105_1
-PROPERTY_URL_PATTERN = re.compile(
-    r"furnishedfinder\.com/property/(\d+)_\d+"
-)
+PROPERTY_URL_PATTERN = re.compile(r"/property/(\d+)_\d+")
 
 
 class FurnishedFinderScraper(BaseScraper):
     source_name = "Furnished Finder"
 
     def scrape(self) -> list[Listing]:
-        if not self.settings.firecrawl_api_key:
-            logger.warning("No Firecrawl API key, skipping Furnished Finder")
-            return []
-
         if not self.settings.anthropic_api_key:
             logger.warning("No Anthropic API key, skipping Furnished Finder")
             return []
 
-        client = FirecrawlClient(self.settings.firecrawl_api_key)
         llm_parser = LLMParser(self.settings.anthropic_api_key)
         listings = []
 
-        for search_url in FURNISHED_FINDER_URLS:
-            try:
-                borough_listings = self._scrape_borough(
-                    client, llm_parser, search_url
-                )
-                listings.extend(borough_listings)
-            except FirecrawlCreditError:
-                logger.error("Firecrawl credits exhausted, stopping Furnished Finder")
-                break
-            except Exception as e:
-                logger.error(f"Failed to scrape Furnished Finder {search_url}: {e}")
+        with BrowserClient(delay_seconds=self.settings.scrape_delay_seconds) as client:
+            for search_url in FURNISHED_FINDER_URLS:
+                try:
+                    borough_listings = self._scrape_borough(
+                        client, llm_parser, search_url
+                    )
+                    listings.extend(borough_listings)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to scrape Furnished Finder {search_url}: {e}"
+                    )
 
         logger.info(f"Furnished Finder: {len(listings)} listings scraped")
         return listings
 
     def _scrape_borough(
         self,
-        client: FirecrawlClient,
+        client: BrowserClient,
         llm_parser: LLMParser,
         search_url: str,
     ) -> list[Listing]:
-        """Scrape one borough: paginate search pages, extract URLs, batch scrape."""
+        """Scrape one borough: paginate search pages, extract URLs, fetch details."""
         logger.info(f"Scraping Furnished Finder search: {search_url}")
 
         # Step 1: Scrape multiple search pages to collect property URLs
         seen_ids: set[str] = set()
         for page_num in range(1, MAX_SEARCH_PAGES + 1):
-            page_url = f"{search_url}&page={page_num}" if page_num > 1 else search_url
+            page_url = (
+                f"{search_url}&page={page_num}" if page_num > 1 else search_url
+            )
             try:
-                markdown = client.scrape_markdown(page_url, timeout=90.0)
-                new_ids = set(PROPERTY_URL_PATTERN.findall(markdown))
+                html = client.fetch_html(page_url, timeout=60.0)
+                if not html:
+                    logger.warning(f"  Empty response from page {page_num}")
+                    continue
+
+                soup = BeautifulSoup(html, "html.parser")
+                links = soup.select('a[href*="/property/"]')
+                new_ids: set[str] = set()
+                for link in links:
+                    m = PROPERTY_URL_PATTERN.search(link.get("href", ""))
+                    if m:
+                        new_ids.add(m.group(1))
+
                 before = len(seen_ids)
                 seen_ids.update(new_ids)
                 added = len(seen_ids) - before
@@ -109,10 +117,11 @@ class FurnishedFinderScraper(BaseScraper):
                         for pid in new_ids
                     }
                     if new_urls.issubset(self.known_urls):
-                        logger.info("  All IDs on this page already known, stopping pagination")
+                        logger.info(
+                            "  All IDs on this page already known, "
+                            "stopping pagination"
+                        )
                         break
-            except FirecrawlCreditError:
-                raise  # Propagate to caller
             except Exception as e:
                 logger.warning(f"  Failed to scrape search page {page_num}: {e}")
 
@@ -132,7 +141,9 @@ class FurnishedFinderScraper(BaseScraper):
         # Filter out URLs we've already scraped in previous runs
         if self.known_urls:
             before = len(urls_to_scrape)
-            urls_to_scrape = [u for u in urls_to_scrape if u not in self.known_urls]
+            urls_to_scrape = [
+                u for u in urls_to_scrape if u not in self.known_urls
+            ]
             skipped = before - len(urls_to_scrape)
             if skipped:
                 logger.info(f"  Skipped {skipped} already-known URLs")
@@ -141,11 +152,11 @@ class FurnishedFinderScraper(BaseScraper):
             logger.info("  All listings already known, nothing to scrape")
             return []
 
-        logger.info(f"  Batch scraping {len(urls_to_scrape)} new listings")
+        logger.info(f"  Fetching {len(urls_to_scrape)} new listings")
 
-        # Step 3: Batch scrape individual listing pages
-        url_to_markdown = client.batch_scrape_markdown(
-            urls_to_scrape, timeout=600.0
+        # Step 3: Fetch individual listing pages via Playwright
+        url_to_markdown = client.batch_fetch_markdown(
+            urls_to_scrape, timeout=30.0
         )
         logger.info(f"  Got {len(url_to_markdown)} page results")
 
@@ -166,6 +177,8 @@ class FurnishedFinderScraper(BaseScraper):
                         listing.source_url = url
                     listings.append(listing)
             except Exception as e:
-                logger.warning(f"  Failed to parse Furnished Finder page {url}: {e}")
+                logger.warning(
+                    f"  Failed to parse Furnished Finder page {url}: {e}"
+                )
 
         return listings

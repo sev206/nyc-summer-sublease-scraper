@@ -1,18 +1,20 @@
 """LeaseBreak.com scraper - NYC-specific sublet marketplace.
 
 LeaseBreak's search page only shows address links without prices or details.
-We extract listing URLs from the search page, then batch-scrape individual
-listing pages via Firecrawl and parse each with the LLM.
+We extract listing URLs from the search page HTML using BeautifulSoup, then
+fetch individual listing pages via Playwright and parse each with the LLM.
 """
 
 import logging
 import re
 
+from bs4 import BeautifulSoup
+
 from models.enums import ListingSource
 from models.listing import Listing
 from parsers.llm_parser import LLMParser, listing_from_parsed
 from scrapers.base import BaseScraper
-from scrapers.firecrawl_client import FirecrawlClient, FirecrawlCreditError
+from scrapers.browser_client import BrowserClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ MAX_LISTINGS_PER_BOROUGH = 50
 
 # Captures (listing_id, slug) from listing URLs
 LISTING_URL_PATTERN = re.compile(
-    r"https://www\.leasebreak\.com/short-term-rental-details/(\d+)/([\w-]+)"
+    r"/short-term-rental-details/(\d+)/([\w-]+)"
 )
 
 
@@ -35,52 +37,55 @@ class LeaseBreakScraper(BaseScraper):
     source_name = "LeaseBreak"
 
     def scrape(self) -> list[Listing]:
-        if not self.settings.firecrawl_api_key:
-            logger.warning("No Firecrawl API key configured, skipping LeaseBreak")
-            return []
-
         if not self.settings.anthropic_api_key:
             logger.warning("No Anthropic API key configured, skipping LeaseBreak")
             return []
 
-        client = FirecrawlClient(self.settings.firecrawl_api_key)
         llm_parser = LLMParser(self.settings.anthropic_api_key)
         listings = []
 
-        for search_url in LEASEBREAK_URLS:
-            try:
-                borough_listings = self._scrape_borough(
-                    client, llm_parser, search_url
-                )
-                listings.extend(borough_listings)
-            except FirecrawlCreditError:
-                logger.error("Firecrawl credits exhausted, stopping LeaseBreak")
-                break
-            except Exception as e:
-                logger.error(f"Failed to scrape LeaseBreak {search_url}: {e}")
+        with BrowserClient(delay_seconds=self.settings.scrape_delay_seconds) as client:
+            for search_url in LEASEBREAK_URLS:
+                try:
+                    borough_listings = self._scrape_borough(
+                        client, llm_parser, search_url
+                    )
+                    listings.extend(borough_listings)
+                except Exception as e:
+                    logger.error(f"Failed to scrape LeaseBreak {search_url}: {e}")
 
         logger.info(f"LeaseBreak: {len(listings)} listings scraped")
         return listings
 
     def _scrape_borough(
         self,
-        client: FirecrawlClient,
+        client: BrowserClient,
         llm_parser: LLMParser,
         search_url: str,
     ) -> list[Listing]:
-        """Scrape one borough: get search page, extract URLs, batch scrape details."""
-        # Step 1: Get search page and extract listing URLs
+        """Scrape one borough: get search page, extract URLs, fetch details."""
+        # Step 1: Get search page and extract listing URLs from HTML
         logger.info(f"Scraping LeaseBreak search: {search_url}")
-        search_markdown = client.scrape_markdown(search_url, timeout=90.0)
+        search_html = client.fetch_html(search_url, timeout=60.0)
+
+        if not search_html:
+            logger.warning(f"  Empty response from {search_url}")
+            return []
+
+        soup = BeautifulSoup(search_html, "html.parser")
+        links = soup.select('a[href*="short-term-rental-details"]')
 
         # Extract (listing_id, slug) pairs, deduplicate by ID
-        matches = LISTING_URL_PATTERN.findall(search_markdown)
         seen_ids: set[str] = set()
         unique_matches: list[tuple[str, str]] = []
-        for listing_id, slug in matches:
-            if listing_id not in seen_ids:
-                seen_ids.add(listing_id)
-                unique_matches.append((listing_id, slug))
+        for link in links:
+            href = link.get("href", "")
+            m = LISTING_URL_PATTERN.search(href)
+            if m:
+                listing_id, slug = m.group(1), m.group(2)
+                if listing_id not in seen_ids:
+                    seen_ids.add(listing_id)
+                    unique_matches.append((listing_id, slug))
 
         logger.info(f"  Found {len(unique_matches)} unique listing URLs")
 
@@ -107,11 +112,11 @@ class LeaseBreakScraper(BaseScraper):
             logger.info("  All listings already known, nothing to scrape")
             return []
 
-        logger.info(f"  Batch scraping {len(urls_to_scrape)} new listings")
+        logger.info(f"  Fetching {len(urls_to_scrape)} new listings")
 
-        # Step 3: Batch scrape individual pages
-        url_to_markdown = client.batch_scrape_markdown(
-            urls_to_scrape, timeout=600.0
+        # Step 3: Fetch individual pages via Playwright
+        url_to_markdown = client.batch_fetch_markdown(
+            urls_to_scrape, timeout=30.0
         )
         logger.info(f"  Got {len(url_to_markdown)} page results")
 
