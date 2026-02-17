@@ -29,12 +29,12 @@ class SpareRoomScraper(BaseScraper):
             logger.warning("No Firecrawl API key configured, skipping SpareRoom")
             return []
 
-        if not self.settings.anthropic_api_key:
-            logger.warning("No Anthropic API key configured, skipping SpareRoom")
+        if not self.settings.google_api_key:
+            logger.warning("No Google API key configured, skipping SpareRoom")
             return []
 
         client = FirecrawlClient(self.settings.firecrawl_api_key)
-        llm_parser = LLMParser(self.settings.anthropic_api_key)
+        llm_parser = LLMParser(self.settings.google_api_key)
         listings = []
 
         try:

@@ -52,12 +52,12 @@ class RoomiScraper(BaseScraper):
             logger.warning("No Firecrawl API key, skipping Roomi")
             return []
 
-        if not self.settings.anthropic_api_key:
-            logger.warning("No Anthropic API key, skipping Roomi")
+        if not self.settings.google_api_key:
+            logger.warning("No Google API key, skipping Roomi")
             return []
 
         client = FirecrawlClient(self.settings.firecrawl_api_key)
-        llm_parser = LLMParser(self.settings.anthropic_api_key)
+        llm_parser = LLMParser(self.settings.google_api_key)
         listings = []
 
         for url in ROOMI_NEIGHBORHOOD_URLS:

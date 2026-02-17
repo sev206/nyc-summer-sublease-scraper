@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     apify_api_token: str = ""
     anthropic_api_key: str = ""
     firecrawl_api_key: str = ""
+    google_api_key: str = ""
+    openai_api_key: str = ""
 
     # Google Sheets
     google_sheets_credentials_file: str = "config/service_account.json"

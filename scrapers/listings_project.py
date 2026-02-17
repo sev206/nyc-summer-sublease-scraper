@@ -29,12 +29,12 @@ class ListingsProjectScraper(BaseScraper):
             logger.warning("No Firecrawl API key, skipping Listings Project")
             return []
 
-        if not self.settings.anthropic_api_key:
-            logger.warning("No Anthropic API key, skipping Listings Project")
+        if not self.settings.google_api_key:
+            logger.warning("No Google API key, skipping Listings Project")
             return []
 
         client = FirecrawlClient(self.settings.firecrawl_api_key)
-        llm_parser = LLMParser(self.settings.anthropic_api_key)
+        llm_parser = LLMParser(self.settings.google_api_key)
         listings = []
 
         for url in LISTINGS_PROJECT_URLS:

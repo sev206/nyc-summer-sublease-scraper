@@ -1,4 +1,4 @@
-"""Facebook Groups scraper - via Apify + Claude Haiku LLM parsing."""
+"""Facebook Groups scraper - via Apify + Gemini LLM parsing."""
 
 import logging
 from datetime import datetime
@@ -24,15 +24,15 @@ class FacebookGroupsScraper(BaseScraper):
             logger.warning("No Apify API token configured, skipping Facebook Groups")
             return []
 
-        if not self.settings.anthropic_api_key:
+        if not self.settings.google_api_key:
             logger.warning(
-                "No Anthropic API key configured, skipping Facebook Groups "
+                "No Google API key configured, skipping Facebook Groups "
                 "(needed for LLM parsing)"
             )
             return []
 
         apify_client = ApifyClient(self.settings.apify_api_token)
-        llm_parser = LLMParser(self.settings.anthropic_api_key)
+        llm_parser = LLMParser(self.settings.google_api_key)
 
         all_posts = []
         for group_url in self.settings.facebook_group_urls:

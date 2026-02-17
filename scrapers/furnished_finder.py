@@ -49,11 +49,11 @@ class FurnishedFinderScraper(BaseScraper):
     source_name = "Furnished Finder"
 
     def scrape(self) -> list[Listing]:
-        if not self.settings.anthropic_api_key:
-            logger.warning("No Anthropic API key, skipping Furnished Finder")
+        if not self.settings.google_api_key:
+            logger.warning("No Google API key, skipping Furnished Finder")
             return []
 
-        llm_parser = LLMParser(self.settings.anthropic_api_key)
+        llm_parser = LLMParser(self.settings.google_api_key)
         listings = []
 
         with BrowserClient(delay_seconds=self.settings.scrape_delay_seconds) as client:

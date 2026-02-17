@@ -1,6 +1,6 @@
 """LLM-based parser for unstructured text - Facebook posts and search result pages.
 
-Uses Claude Haiku to extract structured listing data from free-form text.
+Uses Gemini 2.5 Flash Lite to extract structured listing data from free-form text.
 """
 
 import json
@@ -8,7 +8,7 @@ import logging
 from datetime import date
 from typing import Optional
 
-import anthropic
+import httpx
 
 from config.neighborhoods import get_borough, normalize_neighborhood
 from models.enums import Borough, ListingSource, ListingType
@@ -163,9 +163,31 @@ def listing_from_parsed(
 
 
 class LLMParser:
-    def __init__(self, api_key: str, model: str = "claude-haiku-4-5-20251001"):
-        self.client = anthropic.Anthropic(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-lite"):
+        self.api_key = api_key
         self.model = model
+        self._api_url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent?key={api_key}"
+        )
+
+    def _call_gemini(self, prompt: str, max_tokens: int = 1024) -> str:
+        """Call the Gemini API and return the text response."""
+        response = httpx.post(
+            self._api_url,
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.0,
+                    "maxOutputTokens": max_tokens,
+                },
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
 
     def parse_facebook_post(self, post_text: str) -> Optional[dict]:
         """Parse a Facebook post into structured listing data."""
@@ -173,29 +195,18 @@ class LLMParser:
             return None
 
         try:
-            response = self.client.messages.create(
-                model=self.model,
+            text = self._call_gemini(
+                EXTRACTION_PROMPT.format(post_text=post_text[:2000]),
                 max_tokens=500,
-                temperature=0.0,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": EXTRACTION_PROMPT.format(
-                            post_text=post_text[:2000]
-                        ),
-                    }
-                ],
             )
-
-            text = response.content[0].text.strip()
-            text = self._clean_json(text)
+            text = self._clean_json(text.strip())
             return json.loads(text)
 
         except json.JSONDecodeError as e:
             logger.warning(f"LLM returned invalid JSON: {e}")
             return None
-        except anthropic.APIError as e:
-            logger.error(f"Anthropic API error: {e}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Gemini API error: {e}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error parsing FB post: {e}")
@@ -241,23 +252,14 @@ class LLMParser:
     ) -> list[dict]:
         """Parse a single chunk of page content into listing dicts."""
         try:
-            response = self.client.messages.create(
-                model=self.model,
+            text = self._call_gemini(
+                LISTINGS_PAGE_PROMPT.format(
+                    source_name=source_name,
+                    page_content=page_content,
+                ),
                 max_tokens=8192,
-                temperature=0.0,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": LISTINGS_PAGE_PROMPT.format(
-                            source_name=source_name,
-                            page_content=page_content,
-                        ),
-                    }
-                ],
             )
-
-            text = response.content[0].text.strip()
-            text = self._clean_json(text)
+            text = self._clean_json(text.strip())
             result = json.loads(text)
 
             if isinstance(result, list):
@@ -272,8 +274,8 @@ class LLMParser:
         except json.JSONDecodeError as e:
             logger.warning(f"LLM returned invalid JSON for {chunk_label}: {e}")
             return []
-        except anthropic.APIError as e:
-            logger.error(f"Anthropic API error for {chunk_label}: {e}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Gemini API error for {chunk_label}: {e}")
             return []
         except Exception as e:
             logger.error(f"Unexpected error parsing {chunk_label}: {e}")

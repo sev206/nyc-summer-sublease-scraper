@@ -37,11 +37,11 @@ class LeaseBreakScraper(BaseScraper):
     source_name = "LeaseBreak"
 
     def scrape(self) -> list[Listing]:
-        if not self.settings.anthropic_api_key:
-            logger.warning("No Anthropic API key configured, skipping LeaseBreak")
+        if not self.settings.google_api_key:
+            logger.warning("No Google API key configured, skipping LeaseBreak")
             return []
 
-        llm_parser = LLMParser(self.settings.anthropic_api_key)
+        llm_parser = LLMParser(self.settings.google_api_key)
         listings = []
 
         with BrowserClient(delay_seconds=self.settings.scrape_delay_seconds) as client:
