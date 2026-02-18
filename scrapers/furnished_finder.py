@@ -173,8 +173,9 @@ class FurnishedFinderScraper(BaseScraper):
                         ListingSource.FURNISHED_FINDER,
                         default_furnished=True,
                     )
-                    if not listing.source_url or listing.source_url == "":
-                        listing.source_url = url
+                    # Always use the URL we fetched — LLM may return
+                    # a relative path like "/property/688200_1"
+                    listing.source_url = url
                     listings.append(listing)
             except Exception as e:
                 logger.warning(

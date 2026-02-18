@@ -129,9 +129,9 @@ class LeaseBreakScraper(BaseScraper):
                 )
                 for parsed in parsed_list:
                     listing = listing_from_parsed(parsed, ListingSource.LEASEBREAK)
-                    # Override URL with the actual listing page URL
-                    if not listing.source_url or listing.source_url == "":
-                        listing.source_url = url
+                    # Always use the URL we fetched — LLM may return
+                    # a relative path instead of the full URL
+                    listing.source_url = url
                     listings.append(listing)
             except Exception as e:
                 logger.warning(f"  Failed to parse LeaseBreak page {url}: {e}")
