@@ -73,7 +73,7 @@ Required in `.env`:
 
 | Source | Method | Scheduled | Notes |
 |--------|--------|-----------|-------|
-| Facebook Groups (5) | Apify actor + Claude Haiku | 3x/day (8am, 1pm, 6pm EST) | 10 posts/group, last 5 hours only |
+| Facebook Groups (5) | Apify actor + Gemini Flash Lite | 3x/day (8am, 1pm, 6pm EST) | Dynamic time window, limit 50/group |
 | Craigslist NYC | httpx + BeautifulSoup | 5x/day | Fetches individual listing pages |
 | LeaseBreak | Firecrawl | 5x/day | Per-borough, paginated |
 | Furnished Finder | Firecrawl | 5x/day | Per-borough, paginated |
@@ -98,6 +98,7 @@ Weighted composite score:
 - **Firecrawl REST API** (not MCP): The scraper runs autonomously via GitHub Actions, not inside an LLM agent context. Direct API calls via httpx are used instead of MCP tools.
 - **Fail-open per source**: If one scraper fails (site down, rate limited, etc.), others still run. Errors are logged but don't crash the pipeline.
 - **Status column never overwritten**: The Google Sheet Status column (A) is user-managed. New listings are always appended; existing rows are never modified.
+- **Dynamic FB scrape windows** (not fixed): Per-group last-scrape timestamps are stored in the `_fb_state` worksheet. Each run computes the exact elapsed time + 15-min buffer as the `onlyPostsNewerThan` value, so Apify fetches only posts since the last scrape. The `resultsLimit` of 50 is a safety ceiling — Apify charges per post returned, not per limit set. If Apify costs become prohibitive, Bright Data's Web Scraper API ($1.50/1K records pay-as-you-go) is a viable alternative with absolute `start_date`/`end_date` filtering. See: https://docs.brightdata.com/api-reference/web-scraper-api/social-media-apis/facebook
 
 ## Google Sheet Worksheets
 
@@ -106,6 +107,7 @@ Weighted composite score:
 | Sheet1 | Main listings (17 columns: Status through Listing ID) |
 | `_seen` | Dedup fingerprints (auto-created) |
 | `_log` | Hit-limit warnings for FB groups (auto-created) |
+| `_fb_state` | Per-group last-scrape timestamps for dynamic time windows (auto-created) |
 
 ## Running Tests
 

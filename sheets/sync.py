@@ -2,11 +2,17 @@
 
 import logging
 from datetime import datetime
+from typing import Optional
 
 import gspread
 
 from models.listing import Listing
-from sheets.client import ensure_headers, ensure_log_worksheet, ensure_seen_worksheet
+from sheets.client import (
+    ensure_fb_state_worksheet,
+    ensure_headers,
+    ensure_log_worksheet,
+    ensure_seen_worksheet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +30,9 @@ class SheetSync:
 
         # Monitoring log worksheet
         self.log_ws = ensure_log_worksheet(spreadsheet)
+
+        # Facebook scrape state worksheet
+        self.fb_state_ws = ensure_fb_state_worksheet(spreadsheet)
 
     def get_existing_ids(self) -> set[str]:
         """Read the Listing ID column to get all existing fingerprints."""
@@ -75,6 +84,36 @@ class SheetSync:
             )
         except Exception as e:
             logger.warning(f"Failed to write hit-limit log: {e}")
+
+    def get_fb_last_scrape(self, group_url: str) -> Optional[datetime]:
+        """Get the last scrape timestamp for a Facebook group."""
+        try:
+            urls = self.fb_state_ws.col_values(1)
+            for i, url in enumerate(urls):
+                if url == group_url:
+                    timestamp_str = self.fb_state_ws.cell(i + 1, 2).value
+                    if timestamp_str:
+                        return datetime.fromisoformat(timestamp_str)
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to read FB state for {group_url}: {e}")
+            return None
+
+    def set_fb_last_scrape(self, group_url: str) -> None:
+        """Record the current time as last scrape for a Facebook group."""
+        now = datetime.utcnow().isoformat()
+        try:
+            urls = self.fb_state_ws.col_values(1)
+            for i, url in enumerate(urls):
+                if url == group_url:
+                    self.fb_state_ws.update_cell(i + 1, 2, now)
+                    return
+            # Not found — append new row
+            self.fb_state_ws.append_row(
+                [group_url, now], value_input_option="USER_ENTERED"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to write FB state for {group_url}: {e}")
 
     def append_listings(self, listings: list[Listing]) -> int:
         """Append new listings to the sheet. Returns count of rows added.

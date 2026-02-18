@@ -58,10 +58,21 @@ class FacebookGroupsScraper(BaseScraper):
         """Scrape a single Facebook group using Apify."""
         logger.info(f"Scraping Facebook group: {group_url}")
 
+        # Compute dynamic time window from last scrape timestamp
+        last_scrape = self.sheet_sync.get_fb_last_scrape(group_url) if self.sheet_sync else None
+        if last_scrape:
+            elapsed = datetime.utcnow() - last_scrape
+            minutes = int(elapsed.total_seconds() / 60) + 15  # 15-min buffer
+            time_window = f"{minutes} minutes"
+        else:
+            time_window = "6 hours"  # Conservative fallback for first run
+
+        logger.info(f"  Time window: {time_window} (last scrape: {last_scrape or 'never'})")
+
         run_input = {
             "startUrls": [{"url": group_url}],
-            "resultsLimit": 10,
-            "onlyPostsNewerThan": "5 hours",
+            "resultsLimit": 50,
+            "onlyPostsNewerThan": time_window,
             "maxComments": 0,
             "includeNestedComments": False,
         }
@@ -79,6 +90,11 @@ class FacebookGroupsScraper(BaseScraper):
             )
             if self.sheet_sync:
                 self.sheet_sync.log_hit_limit("Facebook Groups", group_url, count, limit)
+
+        # Record successful scrape timestamp
+        if self.sheet_sync:
+            self.sheet_sync.set_fb_last_scrape(group_url)
+
         return items
 
     def _parse_post(self, post: dict, llm_parser: LLMParser) -> Optional[Listing]:

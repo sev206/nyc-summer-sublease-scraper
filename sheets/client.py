@@ -77,3 +77,14 @@ def ensure_seen_worksheet(spreadsheet: gspread.Spreadsheet) -> gspread.Worksheet
         ws.update("A1:C1", [["fingerprint", "source", "first_seen"]])
         logger.info("Created _seen worksheet for dedup persistence")
         return ws
+
+
+def ensure_fb_state_worksheet(spreadsheet: gspread.Spreadsheet) -> gspread.Worksheet:
+    """Get or create the _fb_state worksheet for per-group scrape timestamps."""
+    try:
+        return spreadsheet.worksheet("_fb_state")
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet("_fb_state", rows=100, cols=2)
+        ws.update("A1:B1", [["group_url", "last_scrape_utc"]])
+        logger.info("Created _fb_state worksheet for Facebook scrape timestamps")
+        return ws
